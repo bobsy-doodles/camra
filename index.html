@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Share photo (consent required)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; padding: 18px; max-width:700px; margin:auto; }
+    .notice { background:#fff8e1; border-left:4px solid #ffb74d; padding:12px; margin-bottom:14px; }
+    button, input[type="file"] { padding:10px 14px; font-size:16px; }
+    #preview { margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; }
+    .thumb { position:relative; }
+    .thumb img { max-width:180px; border:1px solid #ddd; border-radius:6px; display:block; }
+    .thumb button { position:absolute; right:6px; top:6px; background:rgba(255,255,255,0.9); border:1px solid #ccc; border-radius:4px; padding:4px 6px; cursor:pointer; }
+    .status { margin-top:12px; color:#333; }
+  </style>
+</head>
+<body>
+  <h1>Share a photo</h1>
+
+  <div class="notice">
+    <strong>Consent required</strong> — By taking or uploading a photo you explicitly agree to send the image(s) to <em>Example Org</em> for the stated purpose: <em>[describe purpose]</em>. Images will be stored for <em>[retention period]</em> and may be viewed by <em>[authorized roles]</em>. To request deletion or questions contact: <em>[contact info]</em>.
+  </div>
+
+  <p>Choose or take one or more photos. Tap a thumbnail to remove it before uploading.</p>
+
+  <!-- On mobile, capture="environment" suggests back camera; user still chooses -->
+  <input id="fileInput" type="file" accept="image/*" capture="environment" multiple />
+
+  <div id="preview"></div>
+
+  <div style="margin-top:12px;">
+    <button id="uploadBtn" disabled>Upload selected photos</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <script>
+    // Configuration: set your server endpoint here
+    const UPLOAD_URL = 'https://your-server.example.com/upload-photo'; // <-- change to your HTTPS endpoint
+
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const status = document.getElementById('status');
+
+    let files = []; // File objects
+
+    function renderPreview() {
+      preview.innerHTML = '';
+      files.forEach((file, idx) => {
+        const container = document.createElement('div');
+        container.className = 'thumb';
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.alt = file.name || ('photo-' + idx);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        container.appendChild(img);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'Remove';
+        removeBtn.onclick = () => {
+          files.splice(idx,1);
+          renderPreview();
+          uploadBtn.disabled = files.length === 0;
+        };
+        container.appendChild(removeBtn);
+        preview.appendChild(container);
+      });
+      uploadBtn.disabled = files.length === 0;
+    }
+
+    fileInput.addEventListener('change', (e) => {
+      const chosen = Array.from(e.target.files || []);
+      // optional: limit individual file size (e.g., 8MB) or total files
+      const MAX_MB = 12;
+      const filtered = chosen.filter(f => {
+        if (f.size > MAX_MB * 1024 * 1024) {
+          alert(`File "${f.name}" is larger than ${MAX_MB} MB and will be skipped.`);
+          return false;
+        }
+        return f.type.startsWith('image/');
+      });
+      files = files.concat(filtered);
+      renderPreview();
+      // reset input so same file can be chosen again if needed
+      fileInput.value = '';
+    });
+
+    uploadBtn.addEventListener('click', async () => {
+      if (files.length === 0) return;
+      // Confirm consent one more time
+      if (!confirm('Do you consent to upload the selected photo(s) to Example Org for the stated purpose?')) return;
+
+      status.textContent = 'Uploading...';
+      uploadBtn.disabled = true;
+      try {
+        const form = new FormData();
+        // optionally include a short identifier if you have consent
+        // form.append('qr_id', 'EVENT123');
+
+        files.forEach((f, i) => form.append('photos', f, f.name));
+
+        const resp = await fetch(UPLOAD_URL, {
+          method: 'POST',
+          body: form,
+          credentials: 'omit' // don't send cookies unless intended and with consent
+          // optionally include an Authorization header if you use tokens:
+          // headers: { 'Authorization': 'Bearer xxxxx' }
+        });
+
+        if (!resp.ok) {
+          const text = await resp.text().catch(()=>resp.statusText);
+          status.textContent = 'Upload failed: ' + resp.status + ' ' + text;
+        } else {
+          status.textContent = 'Upload successful. Thank you.';
+          files = [];
+          renderPreview();
+        }
+      } catch (err) {
+        status.textContent = 'Network error: ' + err.message;
+      } finally {
+        uploadBtn.disabled = files.length === 0;
+      }
+    });
+  </script>
+</body>
+</html>
